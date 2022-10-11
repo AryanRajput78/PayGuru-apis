@@ -1,14 +1,18 @@
 from django.http import Http404
+from django.forms.models import model_to_dict
+
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework.parsers import MultiPartParser, FormParser
 
+from .forms import image
 from .models import userDetails
 from .serializers import UserSerializer
 
 from requests.auth import HTTPDigestAuth
+
 
 import json
 import requests
@@ -42,21 +46,17 @@ def database():
         print(e)
     return mydb
 
-# API to create a new User. (Development Done.) (Optimized below.)
-# class createUser(generics.ListCreateAPIView):
-#     queryset = userDetails.objects.all()
-#     serializer_class = UserSerializer
-# user_create = createUser.as_view()
-
 # API to check if the device is online or not. (Development Done.)
 @api_view(['GET'])
 def checkOnline(request):
-    dbs = database()
-    cursor = dbs.cursor()
-    cursor.execute("""select * from device_devicedetails""")
-    data = pd.DataFrame([dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor.fetchall()])
+    df = pd.read_excel('./constant/devices.xls')
+    # dbs = database()
+    # cursor = dbs.cursor()
+    # cursor.execute("""select * from device_devicedetails""")
+    # data = pd.DataFrame([dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor.fetchall()])
+    print(df)
     deviceSerial = []
-    for ip in data['ip']:
+    for ip in df['IP']:
         url = "http://" + ip
         firmware = ""
         try:
@@ -85,14 +85,14 @@ def checkOnline(request):
         except Exception as e:
             status = 'Offline'
         deviceSerial.append((firmware, url, status))
-        query = f"""UPDATE device_devicedetails SET status = %s WHERE (ip = %s)"""
-        val = (status, ip)
-        cursor.execute(query, val)
-        dbs.commit()
+        # query = f"""UPDATE device_devicedetails SET status = %s WHERE (ip = %s)"""
+        # val = (status, ip)
+        # cursor.execute(query, val)
+        # dbs.commit()
     # print(deviceSerial)
     return Response(deviceSerial)
 
-# API to get count of User, Cards and Face registered. (Development Done.)
+# API to get count of User, Cards and Face registered on the device. (Development Done.)
 @api_view(['GET'])
 def getCount(request):
     dbs = database()
@@ -138,7 +138,7 @@ def getCount(request):
         info.append(count)
     return Response(info)
  
-#API to get the registered User Details. (Development Done.)
+# API to get the registered User Details on the device. (Development Done.)
 @api_view(['GET'])
 def getUsers(request):
     dbs = database()
@@ -208,7 +208,7 @@ def getUsers(request):
     print(end - start)
     return Response(info)
 
-#API to get the list of cards from the database.
+# API to get the list of cards from the database.
 @api_view(['GET'])
 def getCardList(self):
     punchcard_l = pd.read_excel('')
@@ -273,6 +273,7 @@ def getCardList(self):
                     response.close()
     return Response(data)
 
+# API to create a user and store it in the database. (Development Done.) (Checked using localhost/admin)
 class createUser(APIView):
     
     def get(self, request):
@@ -282,16 +283,18 @@ class createUser(APIView):
 
     def post(self, request):
         serializer = UserSerializer(data=request.data)
-        file = request.data['image']
-        print(file)
+        form = image(request.POST, request.FILES)
         if serializer.is_valid():
-            if file:
-                serializer.image = file 
+            if form.is_valid():
+                form.save()
+                img_object = form.instance
             serializer.save()
+            print(request.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 create_user = createUser.as_view()
 
+# API to update user details stored in the database. (Development Done.)
 class updateUser(APIView):
     
     def get_object(self, pk):
@@ -313,7 +316,7 @@ class updateUser(APIView):
         print(serializer)
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data)
+            return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
@@ -321,18 +324,42 @@ class updateUser(APIView):
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 update_user = updateUser.as_view()
-# class createUser(mixins.ListModelMixin, mixins.CreateModelMixin, generics.GenericAPIView):
-#     queryset = userDetails.objects.all()
-#     serializer_class = UserSerializer
 
-#     def get(self, request, *args, **kwargs):
-#         return self.list(request, *args, **kwargs)
-
-#     def perform_update(self, request, *args, **kwargs):
-#         return self.perform_update(request, *args, **kwargs)
-
-#     def put(self, request, *args, **kwargs):
-#         return self.update(request, *args, **kwargs)
-
-#     def delete(self, request, *args, **kwargs):
-#         return self.destroy(request, *args, **kwargs)
+# API to add user template to the devices. (Partial Development Done.) (Work on Image uploads.)
+@api_view(['GET'])
+def addCardInfo(self):
+    query = userDetails.objects.filter(IP_id=3)
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    for q in query:
+        url = "http://" + str(q.IP) + ":" + f"/ISAPI/AccessControl/UserInfo/Record?format=json"
+        print(url)
+        template = json.dumps({
+            "UserInfo": {
+                "employeeNo": f"{str(q.id)}",
+                "name": f"{str(q.Name)}",
+                "userType": "normal",
+                "gender": str(q.gender),
+                "localUIRight": False,
+                "maxOpenDoorTime": 0,
+                "Valid": {
+                    "enable": True,
+                    "beginTime": "2022-10-10T00:00:00",
+                    "endTime": "2037-12-31T23:59:59",
+                    "timeType": "local"
+                },
+                "doorRight": "1",
+                "RightPlan": [
+                    {
+                        "doorNo": 1,
+                        "planTemplateNo": "1"
+                    }
+                ],
+                "userVerifyMode": ""
+            }
+        })
+        print(template)
+        response = requests.post(url, auth=HTTPDigestAuth(cred["user"], cred["password"]), headers=headers, data=template, timeout=1)
+        print(response.text)
+    return Response('Fetched!')
