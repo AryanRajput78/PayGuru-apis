@@ -7,3 +7,7 @@ myFile2.csv
 test.py
 testDevice.xlsx
 /testing
+/Hikvision/media
+dockerfile
+pushing.py
+*migrations
