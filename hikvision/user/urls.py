@@ -6,13 +6,12 @@ from . import views
 #APIs to access the devices and perform functions.
 urlpatterns = [
     path('', views.checkOnline, name='user-info-api'),
-    path('addTemplates/', views.addCardInfo, name='add-user-templates'),
     path('getusers/', views.getUsers, name='user-online-check-api'),
     path('getCount/', views.getCount, name='user/cards/face-count-api'),
     path('getCardList/', views.getCardList, name='card-list'),
     path('create/', views.create_user, name='create-user'),
     path('update/<int:pk>', views.update_user, name='update-user'),
-    path('addUserTemplate/', views.addCardInfo, name="add-user-template-to=device")
+    path('addUserTemplate/', views.addUserTemplate, name="add-user-template-to-device")
 ]
 
 if settings.DEBUG:
