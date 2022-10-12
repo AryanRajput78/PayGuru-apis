@@ -15,11 +15,19 @@ from requests.auth import HTTPDigestAuth
 
 
 import json
+import logging
 import requests
 import datetime
 import xmltodict
 import pandas as pd
 import pymysql as mysql
+
+# Log file initialization for keeping track of the files.
+logging.basicConfig(
+    filename="./logs.log", format="%(asctime)s %(message)s", filemode="w"
+)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # Login credentials for the devices. Hide this after development. (Development Done.)
 cred = {
@@ -49,14 +57,14 @@ def database():
 # API to check if the device is online or not. (Development Done.)
 @api_view(['GET'])
 def checkOnline(request):
-    df = pd.read_excel('./constant/devices.xls')
-    # dbs = database()
-    # cursor = dbs.cursor()
-    # cursor.execute("""select * from device_devicedetails""")
-    # data = pd.DataFrame([dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor.fetchall()])
-    print(df)
+    # df = pd.read_excel('./constant/devices.xls')
+    dbs = database()
+    cursor = dbs.cursor()
+    cursor.execute("""select * from device_devicedetails""")
+    data = pd.DataFrame([dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor.fetchall()])
+    print(data)
     deviceSerial = []
-    for ip in df['IP']:
+    for ip in data['ip']:
         url = "http://" + ip
         firmware = ""
         try:
@@ -77,13 +85,15 @@ def checkOnline(request):
                     firmware = model.replace(
                         " ", "") + serialNo.replace(" ", "")
                     resp.close()
+                    logging.info(f"Device {ip} - Online.")
                     # print(f'Fetched System info for {url}.')
                 else:
-                    print(f'Unable to fetch System info for {url}.')
+                    logging.info(f"Device {ip} - Unable to fetch information.")
             else:
-                print(f'Authentication for {url} unsuccessful.')
+                logging.info(f"Device {ip} - Authentication failed.")    
         except Exception as e:
             status = 'Offline'
+            logging.info(f"Device - {ip} - Offline.")
         deviceSerial.append((firmware, url, status))
         # query = f"""UPDATE device_devicedetails SET status = %s WHERE (ip = %s)"""
         # val = (status, ip)
@@ -192,7 +202,6 @@ def getUsers(request):
                                 for key in userTemplate["UserInfo"].keys():
                                     if key in uinfo.keys():
                                         userTemplate["UserInfo"][key] = uinfo[key]
-                                        # print(key, uinfo[key])
                                     users[uinfo['employeeNo']] = userTemplate
                         if data['responseStatusStrg'] == "OK":
                             break
@@ -205,7 +214,7 @@ def getUsers(request):
                         response.close()
         info.append(users)
     end = datetime.datetime.now()
-    print(end - start)
+    logging.info(f"Time taken to fetch users - {end - start}")
     return Response(info)
 
 # API to get the list of cards from the database.
@@ -279,6 +288,7 @@ class createUser(APIView):
     def get(self, request):
         users = userDetails.objects.all()
         serializer = UserSerializer(users, many=True)
+        logging.info(f'(createUser) Response - {serializer}')
         return Response(serializer.data)
 
     def post(self, request):
@@ -290,7 +300,9 @@ class createUser(APIView):
                 img_object = form.instance
             serializer.save()
             print(request.data)
+            logging.info(f'(createUser) Data posted successfully! Data = {request.data}')
             return Response(serializer.data, status=status.HTTP_201_CREATED)
+        logging.error(f'(createUser) Some error occurred while posting data. Error = {serializer.error}')
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 create_user = createUser.as_view()
 
@@ -302,64 +314,116 @@ class updateUser(APIView):
             print(userDetails.objects.get(pk=pk))
             return userDetails.objects.get(pk=pk)
         except userDetails.DoesNotExist:
+            logging.error(f'(updateUser) userDetails Does not exist.')
             raise Http404
 
     def get(self, request, pk):
         users = self.get_object(pk)
         serializer = UserSerializer(users)
+        logging.error(f'(updateUser) Response - {serializer.error}')
         return Response(serializer.data)
 
     def put(self, request, pk):
         user = self.get_object(pk)
         serializer = UserSerializer(user, data=request.data)
-        parser_classes = (MultiPartParser, FormParser)
-        print(serializer)
         if serializer.is_valid():
             serializer.save()
+            logging.info(f'(updateUser) User details modified.')
             return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
+        logging.error(f'(updateUser) User details not modified.') 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
         user = self.get_object(pk)
         user.delete()
+        logging.info(f'(updateUser) User deleted.')
         return Response(status=status.HTTP_204_NO_CONTENT)
 update_user = updateUser.as_view()
 
-# API to add user template to the devices. (Partial Development Done.) (Work on Image uploads.)
-@api_view(['GET'])
-def addCardInfo(self):
-    query = userDetails.objects.filter(IP_id=3)
+# Function to check if the user exists or not.
+def checkUser(ip, id):
+    url = "http://" + ip + "/ISAPI/AccessControl/UserInfo/Search?format=json"
     headers = {
         'Content-Type': 'application/json'
     }
-    for q in query:
-        url = "http://" + str(q.IP) + ":" + f"/ISAPI/AccessControl/UserInfo/Record?format=json"
-        print(url)
-        template = json.dumps({
-            "UserInfo": {
-                "employeeNo": f"{str(q.id)}",
-                "name": f"{str(q.Name)}",
-                "userType": "normal",
-                "gender": str(q.gender),
-                "localUIRight": False,
-                "maxOpenDoorTime": 0,
-                "Valid": {
-                    "enable": True,
-                    "beginTime": "2022-10-10T00:00:00",
-                    "endTime": "2037-12-31T23:59:59",
-                    "timeType": "local"
-                },
-                "doorRight": "1",
-                "RightPlan": [
-                    {
-                        "doorNo": 1,
-                        "planTemplateNo": "1"
+    payload = json.dumps({
+        "UserInfoSearchCond": {
+            "searchID": "1",
+            "maxResults": 1,
+            "searchResultPosition": 0,
+            "fuzzySearch": str(id)
+        }
+    })
+    response = ""
+    try:
+        response = requests.post(url, auth=HTTPDigestAuth(cred["user"], cred["password"]), headers=headers, data=payload, timeout=1)
+        if response.status_code == 200:
+            data = response.json()['UserInfoSearch']
+            if data['responseStatusStrg'] == "OK" or data['responseStatusStrg'] == "MORE":
+                response.close()
+                return Response(True)
+            if data['responseStatusStrg'] == "NO MATCH":
+                response.close()
+                return Response(False)
+    except Exception as e:
+        if response != "":
+            response.close()
+        return Response(False)
+    finally:
+        if response != "":
+            response.close()
+
+# API to add user template to the devices. (Partial Development Done.) (Work on Image uploads.)
+@api_view(['GET'])
+def addUserTemplate(request):
+    data = request.data
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    for d in data:
+        keys = d.keys() 
+        for key in keys:
+            response = ""
+            if key.isdigit():
+                ip = d['IP']
+                temp = d[key].get('UserInfo')
+                enable = temp['Valid']['enable']
+                emp = temp['employeeNo']
+                template = json.dumps({
+                    "UserInfo": {
+                        "employeeNo": f"{str(temp['employeeNo'])}",
+                        "name": f"{str(temp['name'])}",
+                        "userType": str(temp['userType']).lower(),
+                        "gender": f"{str(temp['gender']).lower()}",
+                        "localUIRight": False,
+                        "maxOpenDoorTime": 0,
+                        "Valid": {
+                            "enable": enable,
+                            "beginTime": "2022-10-10T00:00:00",
+                            "endTime": "2037-12-31T23:59:59",
+                            "timeType": "local"
+                        },
+                        "doorRight": "1",
+                        "RightPlan": [
+                            {
+                                "doorNo": 1,
+                                "planTemplateNo": "1"
+                            }
+                        ],
+                        "userVerifyMode": "",
+                        "CardInfo": "",
+                        "Photo": ""
                     }
-                ],
-                "userVerifyMode": ""
-            }
-        })
-        print(template)
-        response = requests.post(url, auth=HTTPDigestAuth(cred["user"], cred["password"]), headers=headers, data=template, timeout=1)
-        print(response.text)
-    return Response('Fetched!')
+                })
+                found = checkUser(ip, emp)
+                type = 'Record' if found == True else 'Modify'
+                # print(type)
+                if type == "Record":
+                    url = "http://" + str(ip) + f"/ISAPI/AccessControl/UserInfo/{type}?format=json"
+                    response = requests.post(url, auth=HTTPDigestAuth(cred["user"], cred["password"]), headers=headers, data=template, timeout=1)
+                else:
+                    url = "http://" + str(ip) + f"/ISAPI/AccessControl/UserInfo/{type}?format=json"
+                    response = requests.put(url, auth=HTTPDigestAuth(cred["user"], cred["password"]), headers=headers, data=template, timeout=1)
+                print(response.text)
+            logging.info(f"(addCardInfo) Response -> {response}")
+    return Response(data)
