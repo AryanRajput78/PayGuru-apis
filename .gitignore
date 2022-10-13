@@ -8,6 +8,4 @@ test.py
 testDevice.xlsx
 /testing
 /Hikvision/media
-dockerfile
-pushing.py
 *migrations
