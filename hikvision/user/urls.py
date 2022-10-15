@@ -11,7 +11,8 @@ urlpatterns = [
     path('getCardList/', views.getCardList, name='card-list'),
     path('create/', views.create_user, name='create-user'),
     path('update/<int:pk>', views.update_user, name='update-user'),
-    path('addUserTemplate/', views.addUserTemplate, name="add-user-template-to-device")
+    path('addUserTemplate/', views.addUserTemplate, name="add-user-template-to-device"),
+    path('deviceSync/', views.deviceSync, name="sync-user-data-across-devices")
 ]
 
 if settings.DEBUG:
