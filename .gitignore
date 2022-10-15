@@ -9,3 +9,4 @@ testDevice.xlsx
 /testing
 /Hikvision/media
 *migrations
+__pycache__
